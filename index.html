@@ -1,0 +1,109 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>A Trilha</title>
+  <link rel="stylesheet" href="style.css">
+
+  <!-- Supabase (jsDelivr CDN) -->
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+</head>
+<body>
+
+  <div class="phone-mockup">
+
+    <!-- ===== CABEÇALHO ===== -->
+    <header class="app-header">
+      <div class="logo-area">
+        <h1>⎔ A Trilha</h1>
+        <span class="subtitle">Sua jornada diária</span>
+      </div>
+      <div class="streak-area">
+        <span class="streak-fire">🔥</span>
+        <span id="streak-count">0</span>
+      </div>
+    </header>
+
+    <!-- ===== PROGRESSO GLOBAL ===== -->
+    <section class="section progress-section">
+      <div class="progress-header">
+        <span>Progresso do Dia</span>
+        <span id="progress-percent">0%</span>
+      </div>
+      <div class="progress-bar">
+        <div id="progress-fill" class="progress-fill" style="width:0%"></div>
+      </div>
+      <div class="progress-meta">
+        <span>Rodada <span id="round-num">1</span></span>
+        <span id="task-count-badge">0</span>
+        <span id="streak-phrase" class="streak-phrase">"O segredo é começar."</span>
+      </div>
+    </section>
+
+    <!-- ===== TIMER DE FOCO ===== -->
+    <section class="section timer-section">
+      <h2 class="section-title">⏱ Timer de Foco</h2>
+      <div class="timer-inputs">
+        <label>
+          <span>Min</span>
+          <input type="number" id="timer-minutos" value="0" min="0" max="999">
+        </label>
+        <span class="timer-sep">:</span>
+        <label>
+          <span>Seg</span>
+          <input type="number" id="timer-segundos" value="0" min="0" max="59">
+        </label>
+      </div>
+      <div class="timer-display-wrapper">
+        <div id="timer-display">00:00</div>
+      </div>
+      <div class="timer-actions">
+        <button id="timer-start" class="btn btn-primary">▶ Iniciar</button>
+        <button id="timer-pause" class="btn btn-secondary" disabled>⏸ Pausar</button>
+        <button id="timer-reset" class="btn btn-ghost">↺ Reset</button>
+      </div>
+    </section>
+
+    <!-- ===== METAS DIÁRIAS ===== -->
+    <section class="section metrics-section">
+      <h2 class="section-title">📊 Metas Diárias</h2>
+      <div id="metrics-grid" class="metrics-grid"></div>
+    </section>
+
+    <!-- ===== TAREFAS ===== -->
+    <section class="section tasks-section">
+      <h2 class="section-title">✅ Tarefas</h2>
+      <div class="add-bar">
+        <input type="text" id="input-tarefa" placeholder="Nova tarefa..." maxlength="180">
+        <button id="btn-add-tarefa" class="btn btn-primary">+</button>
+      </div>
+      <ul id="lista-tarefas" class="task-list"></ul>
+    </section>
+
+    <!-- ===== METAS DE LONGO PRAZO ===== -->
+    <section class="section goals-section">
+      <h2 class="section-title">🎯 Metas de Longo Prazo</h2>
+      <div class="goals-form">
+        <input type="text" id="input-nome-meta" placeholder="Nome da meta..." maxlength="120">
+        <input type="number" id="input-total-meta" placeholder="Total" min="1" max="999999">
+        <button id="btn-add-meta" class="btn btn-primary">Criar</button>
+      </div>
+      <div id="lista-metas" class="goals-grid"></div>
+    </section>
+
+  </div>
+
+  <!-- ===== ALARME MODAL ===== -->
+  <div id="alarm-overlay" class="alarm-overlay">
+    <div class="alarm-modal">
+      <div class="alarm-icon">⏰</div>
+      <div class="alarm-title">Foco Concluído!</div>
+      <div class="alarm-sub">Muito bem! Você completou o tempo na Trilha.</div>
+      <button id="alarm-dismiss" class="btn btn-primary alarm-btn">DESLIGAR ALARME</button>
+    </div>
+  </div>
+
+  <script src="script.js"></script>
+</body>
+</html>
