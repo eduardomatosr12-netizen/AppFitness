@@ -40,8 +40,8 @@ document.addEventListener('DOMContentLoaded', async () => {
   };
 
   let timerInterval = null;
-  let audioAlarm = null;
   let fallbackInterval = null;
+  let audioCtx = null;
 
   /* ===== DOM ===== */
   const $ = (sel, ctx = document) => ctx.querySelector(sel);
@@ -363,11 +363,11 @@ document.addEventListener('DOMContentLoaded', async () => {
       state.timer.total = readTimer();
       state.timer.remaining = state.timer.total;
     }
-    if (!audioAlarm) {
-      audioAlarm = new Audio('https://google.com');
-      audioAlarm.loop = true;
-      audioAlarm.preload = 'auto';
-      audioAlarm.addEventListener('error', () => { audioAlarm = null; });
+    if (!audioCtx) {
+      audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+    }
+    if (audioCtx.state === 'suspended') {
+      audioCtx.resume();
     }
     state.timer.running = true;
     renderTimer();
@@ -416,28 +416,23 @@ document.addEventListener('DOMContentLoaded', async () => {
   /* ===== ALARME ===== */
   function showAlarm() {
     alarmOverlay.classList.add('active');
-    if (audioAlarm) {
-      audioAlarm.currentTime = 0;
-      audioAlarm.play().catch(() => beepLoop());
-    } else {
-      beepLoop();
-    }
+    beepLoop();
   }
 
   function beepLoop() {
     function beep() {
       try {
-        const ctx = new (window.AudioContext || window.webkitAudioContext)();
-        const osc = ctx.createOscillator();
-        const gain = ctx.createGain();
+        if (!audioCtx) return;
+        const osc = audioCtx.createOscillator();
+        const gain = audioCtx.createGain();
         osc.connect(gain);
-        gain.connect(ctx.destination);
+        gain.connect(audioCtx.destination);
         osc.frequency.value = 880;
         osc.type = 'sine';
-        gain.gain.setValueAtTime(0.3, ctx.currentTime);
-        gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.5);
-        osc.start(ctx.currentTime);
-        osc.stop(ctx.currentTime + 0.5);
+        gain.gain.setValueAtTime(0.3, audioCtx.currentTime);
+        gain.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + 0.5);
+        osc.start(audioCtx.currentTime);
+        osc.stop(audioCtx.currentTime + 0.5);
       } catch (_) {}
     }
     beep();
@@ -446,7 +441,6 @@ document.addEventListener('DOMContentLoaded', async () => {
 
   function dismissAlarm() {
     alarmOverlay.classList.remove('active');
-    if (audioAlarm) { audioAlarm.pause(); audioAlarm.currentTime = 0; }
     if (fallbackInterval) { clearInterval(fallbackInterval); fallbackInterval = null; }
     resetTimer();
   }
