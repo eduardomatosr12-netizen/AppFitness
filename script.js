@@ -42,6 +42,8 @@ document.addEventListener('DOMContentLoaded', async () => {
   let timerInterval = null;
   let fallbackInterval = null;
   let audioCtx = null;
+  let notifTimes = {};
+  const NOTIF_KEY = 'atrilha_notif';
 
   /* ===== DOM ===== */
   const $ = (sel, ctx = document) => ctx.querySelector(sel);
@@ -61,6 +63,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   const timerReset = $('#timer-reset');
 
   const taskInput = $('#input-tarefa');
+  const notifTimeInput = $('#task-notif-time');
   const btnAddTask = $('#btn-add-tarefa');
   const taskList = $('#lista-tarefas');
 
@@ -86,7 +89,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     state.tasks = data.map(r => ({ id: r.id, text: r.texto, done: r.concluida }));
   }
 
-  async function addTask(text) {
+  async function addTask(text, notifTime) {
     const t = text.trim();
     if (!t) return false;
     const { data, error } = await sb
@@ -95,6 +98,10 @@ document.addEventListener('DOMContentLoaded', async () => {
       .select();
     if (error) { console.error('addTask:', error.message); return false; }
     state.tasks.push({ id: data[0].id, text: data[0].texto, done: data[0].concluida });
+    if (notifTime) {
+      notifTimes[data[0].id] = notifTime;
+      saveNotifTimes();
+    }
     renderTasks();
     updateStreakAndProgress();
     return true;
@@ -180,6 +187,7 @@ document.addEventListener('DOMContentLoaded', async () => {
       li.className = 'task-item' + (task.done ? ' completed' : '');
       li.dataset.id = task.id;
 
+      const hasNotif = !!notifTimes[task.id];
       li.innerHTML = `
         <div class="checkbox-wrap">
           <svg viewBox="0 0 24 24" fill="none" stroke="#0c0d12" stroke-width="3" stroke-linecap="round" stroke-linejoin="round">
@@ -187,17 +195,32 @@ document.addEventListener('DOMContentLoaded', async () => {
           </svg>
         </div>
         <span class="task-text">${esc(task.text)}</span>
+        <span class="task-notif${hasNotif ? ' has-notif' : ''}" data-notif-id="${task.id}">${hasNotif ? '🔔' : '🔕'}${hasNotif ? `<span class="notif-time-tag">${notifTimes[task.id]}</span>` : ''}</span>
         <button class="task-delete" data-action="delete-task" aria-label="Remover">&times;</button>
       `;
 
       li.addEventListener('click', (e) => {
         if (e.target.closest('[data-action="delete-task"]')) return;
+        if (e.target.closest('.task-notif')) return;
         toggleTask(task.id);
       });
 
       li.querySelector('.task-delete').addEventListener('click', (e) => {
         e.stopPropagation();
         deleteTask(task.id);
+      });
+
+      li.querySelector('.task-notif').addEventListener('click', (e) => {
+        e.stopPropagation();
+        const current = notifTimes[task.id] || '';
+        const input = prompt('Horário para notificação (HH:MM):\nDeixe vazio para remover.', current);
+        if (input === null) return;
+        const val = input.trim();
+        if (val && !/^\d{2}:\d{2}$/.test(val)) {
+          alert('Formato inválido! Use HH:MM (ex: 14:30)');
+          return;
+        }
+        setTaskNotification(task.id, val || null);
       });
 
       taskList.appendChild(li);
@@ -423,16 +446,27 @@ document.addEventListener('DOMContentLoaded', async () => {
     function beep() {
       try {
         if (!audioCtx) return;
-        const osc = audioCtx.createOscillator();
-        const gain = audioCtx.createGain();
-        osc.connect(gain);
-        gain.connect(audioCtx.destination);
-        osc.frequency.value = 880;
-        osc.type = 'sine';
-        gain.gain.setValueAtTime(0.3, audioCtx.currentTime);
-        gain.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + 0.5);
-        osc.start(audioCtx.currentTime);
-        osc.stop(audioCtx.currentTime + 0.5);
+        const osc1 = audioCtx.createOscillator();
+        const gain1 = audioCtx.createGain();
+        osc1.connect(gain1);
+        gain1.connect(audioCtx.destination);
+        osc1.frequency.value = 330;
+        osc1.type = 'square';
+        gain1.gain.setValueAtTime(0.7, audioCtx.currentTime);
+        gain1.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + 0.5);
+        osc1.start(audioCtx.currentTime);
+        osc1.stop(audioCtx.currentTime + 0.5);
+
+        const osc2 = audioCtx.createOscillator();
+        const gain2 = audioCtx.createGain();
+        osc2.connect(gain2);
+        gain2.connect(audioCtx.destination);
+        osc2.frequency.value = 440;
+        osc2.type = 'square';
+        gain2.gain.setValueAtTime(0.5, audioCtx.currentTime);
+        gain2.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + 0.5);
+        osc2.start(audioCtx.currentTime);
+        osc2.stop(audioCtx.currentTime + 0.5);
       } catch (_) {}
     }
     beep();
@@ -490,11 +524,61 @@ document.addEventListener('DOMContentLoaded', async () => {
     return d.innerHTML;
   }
 
+  /* ===== NOTIFICAÇÕES ===== */
+  function loadNotifTimes() {
+    try {
+      const raw = localStorage.getItem(NOTIF_KEY);
+      if (raw) notifTimes = JSON.parse(raw);
+    } catch (_) {}
+  }
+
+  function saveNotifTimes() {
+    try {
+      localStorage.setItem(NOTIF_KEY, JSON.stringify(notifTimes));
+    } catch (_) {}
+  }
+
+  function setTaskNotification(taskId, time) {
+    if (time) {
+      notifTimes[taskId] = time;
+    } else {
+      delete notifTimes[taskId];
+    }
+    saveNotifTimes();
+    renderTasks();
+  }
+
+  function checkNotifications() {
+    const now = new Date();
+    const currentTime = String(now.getHours()).padStart(2, '0') + ':' + String(now.getMinutes()).padStart(2, '0');
+
+    for (const [taskIdStr, time] of Object.entries(notifTimes)) {
+      if (time === currentTime) {
+        const taskId = parseInt(taskIdStr);
+        const task = state.tasks.find(t => t.id === taskId);
+        if (task) {
+          if ('Notification' in window && Notification.permission === 'granted') {
+            try {
+              const n = new Notification('⏰ Lembrete: ' + task.text, {
+                body: 'Hora de fazer esta tarefa!'
+              });
+              setTimeout(() => n.close(), 10000);
+            } catch (_) {}
+          }
+          delete notifTimes[taskIdStr];
+          saveNotifTimes();
+          renderTasks();
+        }
+      }
+    }
+  }
+
   /* =================================================================
      INIT
      ================================================================= */
   // 1. Restaura dados locais
   loadLocal();
+  loadNotifTimes();
 
   // 2. Carrega dados do banco
   await Promise.all([loadTasks(), loadGoals()]);
@@ -522,6 +606,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   }
   renderTimer();
   roundNum.textContent = state.round || 1;
+  setInterval(checkNotifications, 30000);
 
   /* ===== EVENTOS ===== */
   // Timer
@@ -541,13 +626,19 @@ document.addEventListener('DOMContentLoaded', async () => {
 
   // Tarefas
   btnAddTask.addEventListener('click', async () => {
-    if (await addTask(taskInput.value)) taskInput.value = '';
+    if (await addTask(taskInput.value, notifTimeInput.value)) {
+      taskInput.value = '';
+      notifTimeInput.value = '';
+    }
     taskInput.focus();
   });
   taskInput.addEventListener('keydown', async (e) => {
     if (e.key === 'Enter') {
       e.preventDefault();
-      if (await addTask(taskInput.value)) taskInput.value = '';
+      if (await addTask(taskInput.value, notifTimeInput.value)) {
+        taskInput.value = '';
+        notifTimeInput.value = '';
+      }
     }
   });
 
