@@ -8,6 +8,8 @@
 html {
   font-size: 16px;
   -webkit-text-size-adjust: 100%;
+  -webkit-tap-highlight-color: transparent;
+  -webkit-touch-callout: none;
 }
 
 body {
@@ -17,17 +19,22 @@ body {
   min-height: 100dvh;
   display: flex;
   justify-content: center;
-  padding: 8px 0;
+  overscroll-behavior: none;
+  -webkit-overflow-scrolling: touch;
+  padding: env(safe-area-inset-top) 0 env(safe-area-inset-bottom);
+  padding: 0;
 }
 
 /* ===== PHONE MOCKUP ===== */
 .phone-mockup {
   width: 100%;
-  max-width: 393px;
+  max-width: 480px;
   padding: 16px 20px 32px;
+  padding: max(16px, env(safe-area-inset-top)) max(20px, env(safe-area-inset-right)) max(32px, env(safe-area-inset-bottom)) max(20px, env(safe-area-inset-left));
   display: flex;
   flex-direction: column;
   gap: 20px;
+  min-height: 100dvh;
 }
 
 /* ===== HEADER ===== */
@@ -712,8 +719,110 @@ body {
 }
 
 /* ===== RESPONSIVE ===== */
-@media (min-width: 394px) {
+@media (max-width: 360px) {
+  .phone-mockup {
+    padding-left: 12px;
+    padding-right: 12px;
+    gap: 14px;
+  }
+  .section {
+    padding: 12px 12px;
+  }
+  .timer-inputs input {
+    width: 56px;
+    font-size: 1rem;
+  }
+  #timer-display {
+    font-size: 2.4rem;
+  }
+  .metrics-grid {
+    gap: 6px;
+  }
+  .metric-card {
+    padding: 10px 4px;
+  }
+  .metric-value {
+    font-size: 1.2rem;
+  }
+  .metric-actions button {
+    width: 28px;
+    height: 24px;
+  }
+  .goals-form {
+    flex-direction: column;
+  }
+  .goals-form input[type="number"] {
+    max-width: 100%;
+  }
+  .timer-actions {
+    flex-direction: column;
+  }
+  .timer-actions .btn {
+    width: 100%;
+  }
+}
+
+@media (min-width: 768px) {
   body {
-    padding: 16px 0;
+    padding: 24px 0;
+  }
+  .phone-mockup {
+    max-width: 560px;
+    padding: 28px 32px 40px;
+    gap: 24px;
+  }
+  .section {
+    padding: 20px 24px;
+    border-radius: 20px;
+  }
+  .app-header h1 {
+    font-size: 1.75rem;
+  }
+  .timer-inputs input {
+    width: 80px;
+    font-size: 1.4rem;
+  }
+  #timer-display {
+    font-size: 3.5rem;
+  }
+  .metrics-grid {
+    gap: 14px;
+  }
+  .goals-form input[type="number"] {
+    max-width: 90px;
+  }
+  .alarm-modal {
+    max-width: 400px;
+    padding: 48px 40px;
+  }
+}
+
+@media (min-width: 1024px) {
+  body {
+    padding: 40px 0;
+  }
+  .phone-mockup {
+    max-width: 600px;
+    padding: 32px 40px 48px;
+    border-radius: 28px;
+    box-shadow: 0 8px 48px rgba(0, 0, 0, 0.5);
+  }
+}
+
+@media (display-mode: standalone) {
+  body {
+    padding-top: 0;
+    padding-bottom: 0;
+  }
+  .phone-mockup {
+    padding-top: max(20px, env(safe-area-inset-top));
+    padding-bottom: max(16px, env(safe-area-inset-bottom));
+  }
+}
+
+@media (display-mode: standalone) and (min-width: 768px) {
+  .phone-mockup {
+    border-radius: 28px;
+    box-shadow: 0 8px 48px rgba(0, 0, 0, 0.5);
   }
 }

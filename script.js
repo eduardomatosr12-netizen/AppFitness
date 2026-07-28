@@ -655,6 +655,11 @@ document.addEventListener('DOMContentLoaded', async () => {
     if (e.key === 'Enter') { e.preventDefault(); btnAddGoal.click(); }
   });
 
+  // Service Worker (PWA)
+  if ('serviceWorker' in navigator) {
+    navigator.serviceWorker.register('service-worker.js').catch(() => {});
+  }
+
   // Persiste estado local antes de sair
   window.addEventListener('beforeunload', saveLocal);
 });
