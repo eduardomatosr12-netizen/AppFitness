@@ -13,6 +13,9 @@ document.addEventListener('DOMContentLoaded', async () => {
 
   /* ===== CONFIG ===== */
   const STORAGE_KEY = 'atrilha_local';
+  const TASKS_KEY = 'atrilha_tasks';
+  const GOALS_KEY = 'atrilha_goals';
+  const QUEUE_KEY = 'atrilha_queue';
   const DEFAULT_METRICS = [
     { id: 'agua', label: '💧 Água', value: 0, unit: 'ml', step: 200, max: 4000, icon: '💧' },
     { id: 'estudo', label: '📚 Estudo', value: 0, unit: 'min', step: 5, max: 300, icon: '📚' },
@@ -44,6 +47,90 @@ document.addEventListener('DOMContentLoaded', async () => {
   let audioCtx = null;
   let notifTimes = {};
   const NOTIF_KEY = 'atrilha_notif';
+  let isOnline = navigator.onLine;
+
+  /* ===== OFFLINE QUEUE ===== */
+  function getQueue() {
+    try {
+      return JSON.parse(localStorage.getItem(QUEUE_KEY)) || [];
+    } catch (_) { return []; }
+  }
+
+  function addToQueue(action) {
+    const q = getQueue();
+    q.push({ ...action, timestamp: Date.now() });
+    localStorage.setItem(QUEUE_KEY, JSON.stringify(q));
+  }
+
+  function saveTasksLocal() {
+    try {
+      localStorage.setItem(TASKS_KEY, JSON.stringify(state.tasks));
+    } catch (_) {}
+  }
+
+  function loadTasksLocal() {
+    try {
+      const raw = localStorage.getItem(TASKS_KEY);
+      if (raw) state.tasks = JSON.parse(raw);
+    } catch (_) {}
+  }
+
+  function saveGoalsLocal() {
+    try {
+      localStorage.setItem(GOALS_KEY, JSON.stringify(state.goals));
+    } catch (_) {}
+  }
+
+  function loadGoalsLocal() {
+    try {
+      const raw = localStorage.getItem(GOALS_KEY);
+      if (raw) state.goals = JSON.parse(raw);
+    } catch (_) {}
+  }
+
+  async function processQueue() {
+    if (!isOnline) return;
+    const q = getQueue();
+    if (q.length === 0) return;
+    const remaining = [];
+    for (const item of q) {
+      try {
+        if (item.type === 'addTask') {
+          await sb.from('tarefas').insert({ texto: item.text, concluida: false });
+        } else if (item.type === 'toggleTask') {
+          await sb.from('tarefas').update({ concluida: item.done }).eq('id', item.id);
+        } else if (item.type === 'deleteTask') {
+          await sb.from('tarefas').delete().eq('id', item.id);
+        } else if (item.type === 'addGoal') {
+          await sb.from('metas').insert({ nome: item.name, atual: 0, total: item.target });
+        } else if (item.type === 'incrementGoal') {
+          await sb.from('metas').update({ atual: item.current }).eq('id', item.id);
+        } else if (item.type === 'deleteGoal') {
+          await sb.from('metas').delete().eq('id', item.id);
+        }
+      } catch (_) {
+        remaining.push(item);
+      }
+    }
+    localStorage.setItem(QUEUE_KEY, JSON.stringify(remaining));
+  }
+
+  function updateOnlineStatus() {
+    isOnline = navigator.onLine;
+    const banner = $('#offline-banner');
+    if (banner) banner.style.display = isOnline ? 'none' : 'flex';
+    if (isOnline) processQueue().then(() => syncFromServer());
+  }
+
+  async function syncFromServer() {
+    if (!isOnline) return;
+    await Promise.all([loadTasks(), loadGoals()]);
+    saveTasksLocal();
+    saveGoalsLocal();
+    renderTasks();
+    renderGoals();
+    updateStreakAndProgress();
+  }
 
   /* ===== DOM ===== */
   const $ = (sel, ctx = document) => ctx.querySelector(sel);
@@ -81,23 +168,52 @@ document.addEventListener('DOMContentLoaded', async () => {
      SUPABASE — TAREFAS (tabela: tarefas)
      ================================================================= */
   async function loadTasks() {
+    if (!isOnline) { loadTasksLocal(); return; }
     const { data, error } = await sb
       .from('tarefas')
       .select('*')
       .order('id', { ascending: true });
-    if (error) { console.error('loadTasks:', error.message); return; }
+    if (error) { console.error('loadTasks:', error.message); loadTasksLocal(); return; }
     state.tasks = data.map(r => ({ id: r.id, text: r.texto, done: r.concluida }));
+    saveTasksLocal();
   }
 
   async function addTask(text, notifTime) {
     const t = text.trim();
     if (!t) return false;
+    if (!isOnline) {
+      const tmpId = 'tmp-' + Date.now();
+      state.tasks.push({ id: tmpId, text: t, done: false });
+      saveTasksLocal();
+      if (notifTime) {
+        notifTimes[tmpId] = notifTime;
+        saveNotifTimes();
+      }
+      addToQueue({ type: 'addTask', text: t });
+      renderTasks();
+      updateStreakAndProgress();
+      return true;
+    }
     const { data, error } = await sb
       .from('tarefas')
       .insert({ texto: t, concluida: false })
       .select();
-    if (error) { console.error('addTask:', error.message); return false; }
+    if (error) {
+      console.error('addTask:', error.message);
+      const tmpId = 'tmp-' + Date.now();
+      state.tasks.push({ id: tmpId, text: t, done: false });
+      saveTasksLocal();
+      addToQueue({ type: 'addTask', text: t });
+      if (notifTime) {
+        notifTimes[tmpId] = notifTime;
+        saveNotifTimes();
+      }
+      renderTasks();
+      updateStreakAndProgress();
+      return true;
+    }
     state.tasks.push({ id: data[0].id, text: data[0].texto, done: data[0].concluida });
+    saveTasksLocal();
     if (notifTime) {
       notifTimes[data[0].id] = notifTime;
       saveNotifTimes();
@@ -111,17 +227,51 @@ document.addEventListener('DOMContentLoaded', async () => {
     const task = state.tasks.find(t => t.id === id);
     if (!task) return;
     const newDone = !task.done;
+    if (!isOnline) {
+      task.done = newDone;
+      saveTasksLocal();
+      addToQueue({ type: 'toggleTask', id, done: newDone });
+      renderTasks();
+      updateStreakAndProgress();
+      return;
+    }
     const { error } = await sb.from('tarefas').update({ concluida: newDone }).eq('id', id);
-    if (error) { console.error('toggleTask:', error.message); return; }
+    if (error) {
+      console.error('toggleTask:', error.message);
+      task.done = newDone;
+      saveTasksLocal();
+      addToQueue({ type: 'toggleTask', id, done: newDone });
+      renderTasks();
+      updateStreakAndProgress();
+      return;
+    }
     task.done = newDone;
+    saveTasksLocal();
     renderTasks();
     updateStreakAndProgress();
   }
 
   async function deleteTask(id) {
+    if (!isOnline) {
+      state.tasks = state.tasks.filter(t => t.id !== id);
+      saveTasksLocal();
+      addToQueue({ type: 'deleteTask', id });
+      renderTasks();
+      updateStreakAndProgress();
+      return;
+    }
     const { error } = await sb.from('tarefas').delete().eq('id', id);
-    if (error) { console.error('deleteTask:', error.message); return; }
+    if (error) {
+      console.error('deleteTask:', error.message);
+      state.tasks = state.tasks.filter(t => t.id !== id);
+      saveTasksLocal();
+      addToQueue({ type: 'deleteTask', id });
+      renderTasks();
+      updateStreakAndProgress();
+      return;
+    }
     state.tasks = state.tasks.filter(t => t.id !== id);
+    saveTasksLocal();
     renderTasks();
     updateStreakAndProgress();
   }
@@ -130,24 +280,43 @@ document.addEventListener('DOMContentLoaded', async () => {
      SUPABASE — METAS (tabela: metas)
      ================================================================= */
   async function loadGoals() {
+    if (!isOnline) { loadGoalsLocal(); return; }
     const { data, error } = await sb
       .from('metas')
       .select('*')
       .order('id', { ascending: true });
-    if (error) { console.error('loadGoals:', error.message); return; }
+    if (error) { console.error('loadGoals:', error.message); loadGoalsLocal(); return; }
     state.goals = data.map(r => ({ id: r.id, name: r.nome, current: r.atual, target: r.total }));
+    saveGoalsLocal();
   }
 
   async function addGoal(name, target) {
     const n = name.trim();
     const tot = parseInt(target);
     if (!n || !tot || tot <= 0) return false;
+    if (!isOnline) {
+      const tmpId = 'tmp-' + Date.now();
+      state.goals.push({ id: tmpId, name: n, current: 0, target: tot });
+      saveGoalsLocal();
+      addToQueue({ type: 'addGoal', name: n, target: tot });
+      renderGoals();
+      return true;
+    }
     const { data, error } = await sb
       .from('metas')
       .insert({ nome: n, atual: 0, total: tot })
       .select();
-    if (error) { console.error('addGoal:', error.message); return false; }
+    if (error) {
+      console.error('addGoal:', error.message);
+      const tmpId = 'tmp-' + Date.now();
+      state.goals.push({ id: tmpId, name: n, current: 0, target: tot });
+      saveGoalsLocal();
+      addToQueue({ type: 'addGoal', name: n, target: tot });
+      renderGoals();
+      return true;
+    }
     state.goals.push({ id: data[0].id, name: data[0].nome, current: data[0].atual, target: data[0].total });
+    saveGoalsLocal();
     renderGoals();
     return true;
   }
@@ -156,16 +325,46 @@ document.addEventListener('DOMContentLoaded', async () => {
     const goal = state.goals.find(g => g.id === id);
     if (!goal || goal.current >= goal.target) return;
     const next = goal.current + 1;
+    if (!isOnline) {
+      goal.current = next;
+      saveGoalsLocal();
+      addToQueue({ type: 'incrementGoal', id, current: next });
+      renderGoals();
+      return;
+    }
     const { error } = await sb.from('metas').update({ atual: next }).eq('id', id);
-    if (error) { console.error('incrementGoal:', error.message); return; }
+    if (error) {
+      console.error('incrementGoal:', error.message);
+      goal.current = next;
+      saveGoalsLocal();
+      addToQueue({ type: 'incrementGoal', id, current: next });
+      renderGoals();
+      return;
+    }
     goal.current = next;
+    saveGoalsLocal();
     renderGoals();
   }
 
   async function deleteGoal(id) {
+    if (!isOnline) {
+      state.goals = state.goals.filter(g => g.id !== id);
+      saveGoalsLocal();
+      addToQueue({ type: 'deleteGoal', id });
+      renderGoals();
+      return;
+    }
     const { error } = await sb.from('metas').delete().eq('id', id);
-    if (error) { console.error('deleteGoal:', error.message); return; }
+    if (error) {
+      console.error('deleteGoal:', error.message);
+      state.goals = state.goals.filter(g => g.id !== id);
+      saveGoalsLocal();
+      addToQueue({ type: 'deleteGoal', id });
+      renderGoals();
+      return;
+    }
     state.goals = state.goals.filter(g => g.id !== id);
+    saveGoalsLocal();
     renderGoals();
   }
 
@@ -579,9 +778,13 @@ document.addEventListener('DOMContentLoaded', async () => {
   // 1. Restaura dados locais
   loadLocal();
   loadNotifTimes();
+  loadTasksLocal();
+  loadGoalsLocal();
 
-  // 2. Carrega dados do banco
-  await Promise.all([loadTasks(), loadGoals()]);
+  // 2. Carrega dados do banco (se online)
+  if (isOnline) {
+    await Promise.all([loadTasks(), loadGoals()]);
+  }
 
   // 3. Verifica reset diário
   const lastDateKey = 'atrilha_lastdate';
@@ -662,4 +865,9 @@ document.addEventListener('DOMContentLoaded', async () => {
 
   // Persiste estado local antes de sair
   window.addEventListener('beforeunload', saveLocal);
+
+  // Status online/offline
+  window.addEventListener('online', updateOnlineStatus);
+  window.addEventListener('offline', updateOnlineStatus);
+  updateOnlineStatus();
 });
